@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-scientific_agent_refactored.py
+scientific_agent_refactored.py (V2)
 
 一个经过重构的、功能完善的科学计算 Agent。
 支持流式输出、有限历史记录、自动重试和多步骤工具调用。
+具有更精细的输出格式控制和更智能的行为逻辑。
 """
 
 import os
@@ -26,37 +27,40 @@ class AppConfig:
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     
+    # [修改] 增强的系统提示，指导Agent的行为模式
     system_prompt: str = (
-        "You are a powerful scientific computing assistant. "
-        "You can understand user's math problems, call tools to solve them, "
-        "and finally explain the results to the user in a clear natural language. "
-        "When you believe you have the final answer, prefix your response with 'Final Answer:'"
+        "You are a powerful scientific computing assistant."
+        "\n### INSTRUCTIONS:\n"
+        "1.  **Analyze the user's query:** Determine if it's a simple task, a complex multi-step task, or a general question.\n"
+        "2.  **For simple tasks:**\n"
+        "    - First, briefly state which tool you will use.\n"
+        "    - Then, call the tool.\n"
+        "3.  **For complex, multi-step tasks:**\n"
+        "    - You MUST first outline a step-by-step plan. For example: 'Here is my plan:\\nStep 1: Differentiate the function.\\nStep 2: Solve the resulting equation.'\n"
+        "    - After presenting the plan, execute each step sequentially. For each step, follow the procedure for simple tasks (state the tool, then call it).\n"
+        "4.  **Final Answer:** After all necessary tool calls are complete and you have the definitive answer to the user's original query, you MUST provide a final, comprehensive summary prefixed with `Final Answer:`."
     )
     max_history: int = 10
     max_tokens: int = 4000
-    
-    model: str = "deepseek-r1" # 默认模型，可以被UI层覆盖
-    
+    model: str = "deepseek-r1"
     max_retries: int = 3
     backoff_factor: float = 1.5
 
     def __post_init__(self):
-        """在对象初始化后执行，用于加载环境变量或进行验证"""
         dotenv.load_dotenv()
         if self.api_key is None:
             self.api_key = os.getenv("OPENAI_API_KEY")
         if self.base_url is None:
-            self.base_url = os.getenv("OPENAI_BASE_URL") # 允许多个环境变量
+            self.base_url = os.getenv("OPENAI_BASE_URL")
         if not self.api_key:
             raise ValueError("未能获取到 OPENAI_API_KEY。请检查 .env 文件或环境变量设置。")
 
 # --- 2. 工具箱 (ToolBox) ---
+# ToolBox 类保持不变，其设计已经足够解耦
 class ToolBox:
-    """封装和管理所有科学计算工具"""
-
     @staticmethod
     def solve_symbolic_equation(equation: str, variable: str = 'x') -> str:
-        """求解符号数学方程，例如 'x**2 - 4'。"""
+        # ... (代码不变) ...
         try:
             var_symbol = sympy.symbols(variable)
             expr = sympy.sympify(equation)
@@ -67,7 +71,7 @@ class ToolBox:
 
     @staticmethod
     def perform_symbolic_differentiation(expression: str, variable: str = 'x') -> str:
-        """对数学表达式进行符号求导，例如 'x**3 + sin(x)'。"""
+        # ... (代码不变) ...
         try:
             var_symbol = sympy.symbols(variable)
             expr = sympy.sympify(expression)
@@ -75,12 +79,11 @@ class ToolBox:
             return f"The derivative of the expression is: {derivative}"
         except Exception as e:
             return f"Error while differentiating: {e}"
-
+        
     @staticmethod
     def calculate_numerical_integral(func_str: str, lower_bound: float, upper_bound: float) -> str:
-        """计算函数在给定区间的定积分（数值积分）。函数应为 lambda 字符串。"""
+        # ... (代码不变) ...
         try:
-            # 安全警告: eval 是危险的，仅用于受控环境。
             func = eval(func_str, {"np": np})
             lower = np.inf if str(lower_bound) == 'inf' else -np.inf if str(lower_bound) == '-inf' else lower_bound
             upper = np.inf if str(upper_bound) == 'inf' else -np.inf if str(upper_bound) == '-inf' else upper_bound
@@ -88,9 +91,9 @@ class ToolBox:
             return f"The integral result is approximately: {result} with an error of {error}"
         except Exception as e:
             return f"Error during integration: {e}"
-            
+
     def get_tools_schema(self) -> List[Dict]:
-        """返回符合 OpenAI API 格式的工具定义列表"""
+        # ... (代码不变) ...
         return [
             {"type": "function", "function": {
                 "name": "solve_symbolic_equation",
@@ -120,7 +123,7 @@ class ToolBox:
         ]
 
     def get_function_map(self) -> Dict[str, callable]:
-        """返回函数名到可调用对象的映射"""
+        # ... (代码不变) ...
         return {
             "solve_symbolic_equation": self.solve_symbolic_equation,
             "perform_symbolic_differentiation": self.perform_symbolic_differentiation,
@@ -128,8 +131,9 @@ class ToolBox:
         }
 
 # --- 3. 对话管理器 (Conversation Manager) ---
-# (与之前的例子类似，专注于历史记录管理)
+# (代码不变)
 class ConversationManager:
+    # ... (代码不变) ...
     def __init__(self, config: AppConfig):
         self.config = config
         self.messages: List[Dict[str, Any]] = [
@@ -152,7 +156,9 @@ class ConversationManager:
         return self.messages
 
 # --- 4. 大模型客户端 (LLM Client) ---
+# (代码不变)
 class LLMClient:
+    # ... (代码不变) ...
     def __init__(self, config: AppConfig):
         self.config = config
         self.client = OpenAI(api_key=config.api_key, base_url=config.base_url)
@@ -160,10 +166,7 @@ class LLMClient:
     def get_response_stream(
         self, messages: List[Dict[str, Any]], tools: List[Dict]
     ) -> Generator[Dict[str, Any], None, None]:
-        """
-        带重试和工具调用处理的流式API调用。
-        Yields a dictionary indicating the type of content.
-        """
+        # ... (代码不变) ...
         for attempt in range(self.config.max_retries):
             try:
                 stream = self.client.chat.completions.create(
@@ -190,19 +193,17 @@ class LLMClient:
             except Exception as e:
                 yield {"type": "error", "content": f"An unexpected error occurred: {e}"}
                 break
-
+                
 # --- 5. 终端界面 (Terminal UI) ---
 class TerminalUI:
     @staticmethod
     def get_user_input() -> str:
         return input("你: ")
     
+    # [修改] 将工具调用和结果合并显示，格式更紧凑
     @staticmethod
-    def display_tool_call(tool_name: str, args: Dict):
+    def display_tool_interaction(tool_name: str, args: Dict, result: str):
         print(f"\n> 调用工具: {tool_name}({json.dumps(args, ensure_ascii=False)})")
-
-    @staticmethod
-    def display_tool_result(tool_name: str, result: str):
         print(f"< 工具返回: {result}")
 
     @staticmethod
@@ -216,10 +217,6 @@ class TerminalUI:
     @staticmethod
     def display_assistant_response_chunk(content: str):
         print(content, end="", flush=True)
-
-    @staticmethod
-    def display_assistant_response_end():
-        print()
 
 # --- 6. 应用主控 (Main Application) ---
 class ScientificAgentApp:
@@ -245,6 +242,9 @@ class ScientificAgentApp:
         print("\n感谢使用，再见！")
 
     def _execute_agent_loop(self):
+        # [修改] 引入状态标志，确保 "助手: " 每轮只打印一次
+        assistant_prefix_printed = False
+
         while True:
             api_messages = self.conversation.get_api_messages()
             tools_schema = self.toolbox.get_tools_schema()
@@ -254,61 +254,67 @@ class ScientificAgentApp:
             full_response_content = ""
             tool_calls = []
             
-            self.ui.display_assistant_response_start()
+            # [修改] 只有在从未打印过 "助手: " 的情况下才打印
+            if not assistant_prefix_printed:
+                self.ui.display_assistant_response_start()
+                assistant_prefix_printed = True
 
             for chunk_data in stream:
+                # ... (错误处理部分不变) ...
                 if chunk_data.get("type") == "error":
                     self.ui.display_error(chunk_data.get("content", "未知错误"))
                     return
-
                 choices = chunk_data.get("choices", [])
-                if not choices:
-                    continue
-
+                if not choices: continue
                 delta = choices[0].get("delta", {})
                 
-                # 处理流式文本内容
                 if content_chunk := delta.get("content"):
                     full_response_content += content_chunk
                     self.ui.display_assistant_response_chunk(content_chunk)
                 
-                # 处理流式工具调用
                 if tool_call_chunks := delta.get("tool_calls"):
+                    # ... (工具调用块的拼接逻辑不变) ...
                     for tool_call_chunk in tool_call_chunks:
                         if len(tool_calls) <= tool_call_chunk["index"]:
                             tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-                        
                         tc = tool_calls[tool_call_chunk["index"]]
                         if tool_call_chunk.get("id"): tc["id"] = tool_call_chunk["id"]
                         if func := tool_call_chunk.get("function"):
                             if name := func.get("name"): tc["function"]["name"] += name
                             if args := func.get("arguments"): tc["function"]["arguments"] += args
             
-            self.ui.display_assistant_response_end()
+            # [修改] 将换行控制移到这里，在流式输出结束后执行
+            # 如果后面紧跟着工具调用，这个换行可以起到分隔作用
+            # 如果后面没有内容，也不会产生多余的空行
+            if full_response_content:
+                print()
+
+            # 根据`Final Answer:`信号和工具调用来决定下一步
+            is_final_answer = full_response_content.strip().startswith("Final Answer:")
             
-            # 根据响应决定下一步行动
-            if not tool_calls:
-                # 没有工具调用，对话结束
+            if is_final_answer or not tool_calls:
+                # 如果有 "Final Answer:" 信号，或者没有任何工具调用，则认为是最终答案
                 self.conversation.add_message("assistant", full_response_content)
                 break
             else:
-                # 有工具调用，执行它们
+                # 有工具调用，执行它们并继续循环
                 self.conversation.add_message("assistant", full_response_content, tool_calls=tool_calls)
                 for tool_call in tool_calls:
                     tool_name = tool_call["function"]["name"]
-                    tool_args = json.loads(tool_call["function"]["arguments"])
-                    
-                    self.ui.display_tool_call(tool_name, tool_args)
-                    
-                    function_to_call = self.function_map[tool_name]
-                    result = function_to_call(**tool_args)
-                    
-                    self.ui.display_tool_result(tool_name, result)
-                    self.conversation.add_message("tool", result, tool_call_id=tool_call["id"], name=tool_name)
-                # 继续循环，将工具结果返回给模型
+                    try:
+                        tool_args = json.loads(tool_call["function"]["arguments"])
+                        function_to_call = self.function_map[tool_name]
+                        result = function_to_call(**tool_args)
+                        self.ui.display_tool_interaction(tool_name, tool_args, result)
+                        self.conversation.add_message("tool", result, tool_call_id=tool_call["id"], name=tool_name)
+                    except json.JSONDecodeError:
+                        error_msg = f"Error: Invalid JSON arguments from model for tool {tool_name}."
+                        self.ui.display_error(error_msg)
+                        self.conversation.add_message("tool", error_msg, tool_call_id=tool_call["id"], name=tool_name)
                 continue
 
 # --- 程序入口 ---
+# (代码不变)
 if __name__ == "__main__":
     try:
         app_config = AppConfig()
