@@ -1,0 +1,40 @@
+# --- Secrets ---
+# Ignore all environment files
+**/.env
+
+# --- OS Files ---
+# Ignore macOS and Windows system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE & Editor ---
+# Ignore VS Code and JetBrains IDE configuration
+.vscode/
+.idea/
+
+# --- Dependencies ---
+# Ignore Node.js packages
+node_modules/
+
+# Ignore Python virtual environments
+.venv/
+venv/
+env/
+
+# --- Python ---
+# Ignore Python cache and artifacts
+__pycache__/
+*.pyc
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# --- Logs & Databases ---
+# Ignore log files and local databases
+*.log
+logs/
+*.sqlite3
+*.db
