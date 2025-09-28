@@ -56,11 +56,9 @@ class AppConfig:
             raise ValueError("未能获取到 OPENAI_API_KEY。请检查 .env 文件或环境变量设置。")
 
 # --- 2. 工具箱 (ToolBox) ---
-# ToolBox 类保持不变，其设计已经足够解耦
 class ToolBox:
     @staticmethod
     def solve_symbolic_equation(equation: str, variable: str = 'x') -> str:
-        # ... (代码不变) ...
         try:
             var_symbol = sympy.symbols(variable)
             expr = sympy.sympify(equation)
@@ -71,7 +69,6 @@ class ToolBox:
 
     @staticmethod
     def perform_symbolic_differentiation(expression: str, variable: str = 'x') -> str:
-        # ... (代码不变) ...
         try:
             var_symbol = sympy.symbols(variable)
             expr = sympy.sympify(expression)
@@ -82,7 +79,6 @@ class ToolBox:
         
     @staticmethod
     def calculate_numerical_integral(func_str: str, lower_bound: float, upper_bound: float) -> str:
-        # ... (代码不变) ...
         try:
             func = eval(func_str, {"np": np})
             lower = np.inf if str(lower_bound) == 'inf' else -np.inf if str(lower_bound) == '-inf' else lower_bound
@@ -93,7 +89,6 @@ class ToolBox:
             return f"Error during integration: {e}"
 
     def get_tools_schema(self) -> List[Dict]:
-        # ... (代码不变) ...
         return [
             {"type": "function", "function": {
                 "name": "solve_symbolic_equation",
@@ -123,7 +118,6 @@ class ToolBox:
         ]
 
     def get_function_map(self) -> Dict[str, callable]:
-        # ... (代码不变) ...
         return {
             "solve_symbolic_equation": self.solve_symbolic_equation,
             "perform_symbolic_differentiation": self.perform_symbolic_differentiation,
@@ -131,9 +125,7 @@ class ToolBox:
         }
 
 # --- 3. 对话管理器 (Conversation Manager) ---
-# (代码不变)
 class ConversationManager:
-    # ... (代码不变) ...
     def __init__(self, config: AppConfig):
         self.config = config
         self.messages: List[Dict[str, Any]] = [
@@ -156,9 +148,7 @@ class ConversationManager:
         return self.messages
 
 # --- 4. 大模型客户端 (LLM Client) ---
-# (代码不变)
 class LLMClient:
-    # ... (代码不变) ...
     def __init__(self, config: AppConfig):
         self.config = config
         self.client = OpenAI(api_key=config.api_key, base_url=config.base_url)
@@ -166,7 +156,6 @@ class LLMClient:
     def get_response_stream(
         self, messages: List[Dict[str, Any]], tools: List[Dict]
     ) -> Generator[Dict[str, Any], None, None]:
-        # ... (代码不变) ...
         for attempt in range(self.config.max_retries):
             try:
                 stream = self.client.chat.completions.create(
@@ -200,7 +189,6 @@ class TerminalUI:
     def get_user_input() -> str:
         return input("你: ")
     
-    # [修改] 将工具调用和结果合并显示，格式更紧凑
     @staticmethod
     def display_tool_interaction(tool_name: str, args: Dict, result: str):
         print(f"\n> 调用工具: {tool_name}({json.dumps(args, ensure_ascii=False)})")
@@ -242,7 +230,6 @@ class ScientificAgentApp:
         print("\n感谢使用，再见！")
 
     def _execute_agent_loop(self):
-        # [修改] 引入状态标志，确保 "助手: " 每轮只打印一次
         assistant_prefix_printed = False
 
         while True:
@@ -254,13 +241,11 @@ class ScientificAgentApp:
             full_response_content = ""
             tool_calls = []
             
-            # [修改] 只有在从未打印过 "助手: " 的情况下才打印
             if not assistant_prefix_printed:
                 self.ui.display_assistant_response_start()
                 assistant_prefix_printed = True
 
             for chunk_data in stream:
-                # ... (错误处理部分不变) ...
                 if chunk_data.get("type") == "error":
                     self.ui.display_error(chunk_data.get("content", "未知错误"))
                     return
@@ -273,7 +258,6 @@ class ScientificAgentApp:
                     self.ui.display_assistant_response_chunk(content_chunk)
                 
                 if tool_call_chunks := delta.get("tool_calls"):
-                    # ... (工具调用块的拼接逻辑不变) ...
                     for tool_call_chunk in tool_call_chunks:
                         if len(tool_calls) <= tool_call_chunk["index"]:
                             tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
@@ -283,13 +267,9 @@ class ScientificAgentApp:
                             if name := func.get("name"): tc["function"]["name"] += name
                             if args := func.get("arguments"): tc["function"]["arguments"] += args
             
-            # [修改] 将换行控制移到这里，在流式输出结束后执行
-            # 如果后面紧跟着工具调用，这个换行可以起到分隔作用
-            # 如果后面没有内容，也不会产生多余的空行
             if full_response_content:
                 print()
 
-            # 根据`Final Answer:`信号和工具调用来决定下一步
             is_final_answer = full_response_content.strip().startswith("Final Answer:")
             
             if is_final_answer or not tool_calls:
@@ -314,7 +294,6 @@ class ScientificAgentApp:
                 continue
 
 # --- 程序入口 ---
-# (代码不变)
 if __name__ == "__main__":
     try:
         app_config = AppConfig()

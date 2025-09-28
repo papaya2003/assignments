@@ -2,19 +2,18 @@ import os
 import random
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Dict, List, Optional, Generator, Tuple
 
 from dotenv import load_dotenv
 from openai import APIError, OpenAI, RateLimitError
 
-# --- 1. 配置中心 (Centralized Configuration) ---
-# 使用 dataclass 将所有配置项集中管理，清晰且易于修改。
+# 1. 配置中心
+# 使用 dataclass 将所有配置项集中管理。
 
 @dataclass
 class AppConfig:
-    """应用程序的配置"""
-    # API a凭证，从环境变量加载
+
+    # API 凭证设置
     api_key: Optional[str] = None
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     
@@ -24,7 +23,6 @@ class AppConfig:
     max_tokens: int = 4000
     
     # API 调用设置
-    # field(default_factory=...) 用于初始化可变类型，如列表
     available_models: List[str] = field(default_factory=lambda: [
         "qwen-plus",
         "qwen-max",
@@ -33,26 +31,21 @@ class AppConfig:
     ])
     default_model: str = "qwen-plus"
     
-    # 重试逻辑
+    # 重试设置
     max_retries: int = 3
     backoff_factor: float = 1.5
 
+    # 程序会先加载AppConfig，而load_dotenv在后面的主程序中，所以不能在上面直接调用os.getenv
     def __post_init__(self):
-        """在对象初始化后执行，用于加载环境变量或进行验证"""
-        # 2. 如果 api_key 没有被手动赋值，则在这里从环境变量加载
         if self.api_key is None:
             self.api_key = os.getenv("DASHSCOPE_API_KEY")
-        
-        # 3. 在这里进行验证，如果依然没有获取到key，就抛出异常
         if not self.api_key:
             raise ValueError("未能获取到 DASHSCOPE_API_KEY。请检查 .env 文件或环境变量设置。")
 
 
-# --- 2. 状态管理 (State Management) ---
-# 对 ConversationManager 进行优化，使其更专注于历史记录的管理。
+# 2. 对话历史管理
 
 class ConversationManager:
-    """管理对话历史，支持记忆长度和token限制"""
 
     def __init__(self, config: AppConfig):
         self.config = config
@@ -61,12 +54,10 @@ class ConversationManager:
         ]
 
     def add_message(self, role: str, content: str):
-        """添加一条消息并执行历史清理"""
         self.messages.append({"role": role, "content": content})
         self._cleanup_history()
 
     def _cleanup_history(self):
-        """根据最大历史长度和token数清理对话记录"""
         # 保留系统消息
         system_message = self.messages[0]
         user_assistant_messages = self.messages[1:]
@@ -83,21 +74,20 @@ class ConversationManager:
         self.messages = [system_message] + user_assistant_messages
 
     def _estimate_tokens(self, messages: List[Dict[str, str]]) -> int:
-        """粗略估算token数 (中文1.5个字符/token，其他4个字符/token)"""
+        # 粗略估算token数
         text = " ".join(msg["content"] for msg in messages)
-        # 这是一个非常粗略的估计，更精确的方法是使用 tiktoken 库
         return int(len(text) / 2.5)
 
     def get_api_messages(self) -> List[Dict[str, str]]:
-        """获取用于API调用的消息列表"""
+        # 获取用于API调用的消息列表
         return self.messages
 
 
-# --- 3. API 通信层 (API Communication Layer) ---
-# LLMClient 只负责与 API 交互，不处理任何 UI 逻辑。
+# 3. API 通信
+# LLMClient 负责与 API 交互。
 
 class LLMClient:
-    """处理与大模型 API 通信的客户端"""
+
     def __init__(self, config: AppConfig):
         if not config.api_key:
             raise ValueError("请设置环境变量 DASHSCOPE_API_KEY")
@@ -108,8 +98,7 @@ class LLMClient:
         self, messages: List[Dict[str, str]], model: str
     ) -> Generator[Tuple[str, Optional[Dict]], None, None]:
         """
-        带重试机制的流式API调用。
-        使用生成器(yield)逐块返回内容，将UI处理与API逻辑分离。
+        带重试机制的流式API调用。使用生成器(yield)逐块返回内容，将UI处理与API逻辑分离。
         """
         for attempt in range(self.config.max_retries):
             try:
@@ -123,13 +112,13 @@ class LLMClient:
                     content = chunk.choices[0].delta.content if chunk.choices else ""
                     usage = chunk.usage.model_dump() if chunk.usage else None
                     yield content or "", usage
-                return  # 成功完成，退出循环
+                return
             except RateLimitError as e:
                 if attempt == self.config.max_retries - 1:
                     print(f"\n错误：达到最大重试次数，请求失败。{e}")
                     break
                 wait_time = self.config.backoff_factor * (2 ** attempt) + random.uniform(0, 1)
-                print(f"\n警告：请求速率受限。将在 {wait_time:.2f} 秒后重试...")
+                print(f"请求速率受限。将在 {wait_time:.2f} 秒后重试...")
                 time.sleep(wait_time)
             except APIError as e:
                 print(f"\n错误：API 请求失败。{e}")
@@ -139,14 +128,14 @@ class LLMClient:
                 break
 
 
-# --- 4. 用户界面层 (User Interface Layer) ---
-# TerminalUI 只负责在终端上显示内容和接收用户输入。
+# 4. UI
+# TerminalUI 负责在终端上显示内容和接收用户输入。
 
 class TerminalUI:
-    """处理终端的输入和输出"""
+
     @staticmethod
     def select_model(config: AppConfig) -> str:
-        """让用户从可用模型列表中选择一个"""
+        # 让用户从可用模型列表中选择一个
         print("请选择要使用的模型：")
         for i, model_name in enumerate(config.available_models, 1):
             print(f"{i}. {model_name}")
@@ -161,7 +150,7 @@ class TerminalUI:
 
     @staticmethod
     def display_streamed_response(stream: Generator[Tuple[str, Optional[Dict]], None, None]) -> Tuple[str, Optional[Dict]]:
-        """处理并显示流式响应"""
+        # 处理并显示流式响应
         full_response = []
         final_usage = None
         print("助手: ", end="", flush=True)
@@ -175,7 +164,7 @@ class TerminalUI:
 
     @staticmethod
     def display_usage(usage: Optional[Dict]):
-        """显示token用量"""
+        # 显示token用量
         if usage:
             print("---")
             print(f"Token 用量: "
@@ -185,11 +174,11 @@ class TerminalUI:
             print("---")
 
 
-# --- 5. 应用主程序 (Main Application) ---
+# 5. 应用主程序
 # ChatApplication 将所有组件串联起来，驱动整个应用。
 
 class ChatApplication:
-    """聊天应用的主控制器"""
+
     def __init__(self, config: AppConfig):
         self.config = config
         self.llm_client = LLMClient(config)
@@ -197,7 +186,7 @@ class ChatApplication:
         self.ui = TerminalUI()
 
     def run(self):
-        """启动应用主循环"""
+        # 启动应用主循环
         model = self.ui.select_model(self.config)
         print(f"\n已选择模型: {model}。输入 'exit' 或 'quit' 退出对话。")
         
@@ -220,18 +209,15 @@ class ChatApplication:
                     self.ui.display_usage(usage)
                 else:
                     print("未能获取助手回复，请检查网络或API凭证。")
-                    # 可选择是否在此处中断
-                    # break
 
             except (KeyboardInterrupt, EOFError):
                 print("\n对话已中断。感谢使用，再见！")
                 break
 
 
-# --- 程序入口 ---
+# 主程序
 if __name__ == "__main__":
-    load_dotenv()  # 加载 .env 文件
+    load_dotenv()
     app_config = AppConfig()
-    print(app_config.api_key)
     app = ChatApplication(app_config)
     app.run()
